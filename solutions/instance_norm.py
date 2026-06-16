@@ -10,7 +10,7 @@ SOLUTION_NAME = "instance_norm"
 NORM_TYPE = "instance"
 LOSS_TYPE = "cross_entropy"
 OPTIMIZER = "adam"
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.0001  # mild L2 to reduce client drift in non-IID FL
 DESCRIPTION = (
     "CNN with InstanceNorm2d. Per-channel per-sample normalization — "
     "good for staining variation in histopathology."

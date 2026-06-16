@@ -74,7 +74,8 @@ def _build_criterion(solution_name, class_weights=None):
     """Build the loss function for a given solution."""
     sol = SOLUTION_REGISTRY[solution_name]
     if sol.LOSS_TYPE == "focal":
-        return FocalLoss(alpha=0.25, gamma=2.0)
+        # Pass per-class weights as alpha so FocalLoss handles class imbalance
+        return FocalLoss(alpha=class_weights, gamma=2.0)
     # Standard CE with class weights to handle imbalance
     return nn.CrossEntropyLoss(weight=class_weights)
 
@@ -115,6 +116,8 @@ def _train_client(client_model, train_loader, criterion, solution_name, local_ep
             logits = client_model(inputs)
             loss = criterion(logits, targets)
             loss.backward()
+            # Gradient clipping to prevent client drift with non-IID data
+            torch.nn.utils.clip_grad_norm_(client_model.parameters(), max_norm=1.0)
             optimizer.step()
 
             batch_size = targets.size(0)
@@ -298,19 +301,36 @@ def train_federated(
 
     criterion = _build_criterion(solution_name, class_weights=class_weights)
 
-    sol = SOLUTION_REGISTRY[solution_name]
-    results = {
-        "solution_name": solution_name,
-        "norm_type": sol.NORM_TYPE,
-        "loss_type": sol.LOSS_TYPE,
-        "description": sol.DESCRIPTION,
-        "num_rounds": num_rounds,
-        "local_epochs": local_epochs,
-        "num_clients": len(train_loaders),
-        "rounds": [],
-    }
+    # Define checkpoint path
+    checkpoint_path = Path(PROJECT_ROOT) / "results" / f"{solution_name}_checkpoint.pth"
+    start_round = 0
+    results = None
 
-    for round_index in range(num_rounds):
+    if checkpoint_path.exists():
+        try:
+            checkpoint = torch.load(checkpoint_path, map_location=device)
+            if checkpoint.get("round", 0) < num_rounds:
+                print(f"  [Checkpoint] Found existing checkpoint. Resuming from round {checkpoint['round'] + 1}...")
+                model.load_state_dict(checkpoint["model_state_dict"])
+                results = checkpoint["results"]
+                start_round = checkpoint["round"]
+        except Exception as e:
+            print(f"  [Checkpoint Warning] Failed to load checkpoint: {e}. Starting from scratch.")
+
+    if results is None:
+        sol = SOLUTION_REGISTRY[solution_name]
+        results = {
+            "solution_name": solution_name,
+            "norm_type": sol.NORM_TYPE,
+            "loss_type": sol.LOSS_TYPE,
+            "description": sol.DESCRIPTION,
+            "num_rounds": num_rounds,
+            "local_epochs": local_epochs,
+            "num_clients": len(train_loaders),
+            "rounds": [],
+        }
+
+    for round_index in range(start_round, num_rounds):
         round_start = time.time()
         client_state_dicts = []
         client_stats = []
@@ -342,6 +362,11 @@ def train_federated(
         ]
         model.load_state_dict(fedavg(client_updates))
 
+        # Recalibrate BatchNorm running statistics after aggregation.
+        # Averaged running stats from non-IID clients are meaningless;
+        # a quick forward pass recomputes them from representative data.
+        model.calibrate_bn(train_loaders, device, max_batches=5)
+
         # Evaluate global model
         eval_metrics = _evaluate_global_model(
             model=model,
@@ -370,6 +395,14 @@ def train_federated(
         results["rounds"].append(round_result)
         results["results_path"] = str(_save_results(results, solution_name))
 
+        # Save checkpoint to disk
+        checkpoint = {
+            "round": round_index + 1,
+            "model_state_dict": model.state_dict(),
+            "results": results
+        }
+        torch.save(checkpoint, checkpoint_path)
+
         print(
             f"  [{solution_name}] Round {round_index + 1}/{num_rounds}: "
             f"loss={avg_round_loss:.4f}, "
@@ -378,5 +411,12 @@ def train_federated(
             f"fair={eval_metrics['fairness_score']:.3f}, "
             f"time={total_round_time:.1f}s"
         )
+
+    # Clean up checkpoint file on successful completion of all rounds
+    if checkpoint_path.exists():
+        try:
+            checkpoint_path.unlink()
+        except Exception:
+            pass
 
     return results

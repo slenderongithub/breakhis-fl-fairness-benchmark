@@ -129,6 +129,57 @@ class BreakHisCNN(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.features(x))
 
+    def reset_bn_stats(self):
+        """Reset all BatchNorm running statistics to defaults.
+
+        Must be called after FedAvg aggregation for models that use
+        BatchNorm, because averaging running statistics from non-IID
+        clients produces meaningless values.
+        """
+        for module in self.modules():
+            if isinstance(module, (nn.BatchNorm2d, nn.BatchNorm1d)):
+                module.running_mean.zero_()
+                module.running_var.fill_(1.0)
+                module.num_batches_tracked.zero_()
+
+    @torch.no_grad()
+    def calibrate_bn(self, data_loaders, device, max_batches=10):
+        """Recalibrate BatchNorm running statistics using representative data.
+
+        After FedAvg aggregation, run a forward pass through a small sample
+        from each client to compute globally valid running statistics.
+
+        Parameters
+        ----------
+        data_loaders : list[DataLoader]
+            Client training data loaders.
+        device : torch.device
+            Device to run calibration on.
+        max_batches : int
+            Maximum batches per client to use for calibration.
+        """
+        # Only calibrate if model actually has BatchNorm layers
+        has_bn = any(
+            isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d))
+            for m in self.modules()
+        )
+        if not has_bn:
+            return
+
+        self.reset_bn_stats()
+        self.train()  # BN must be in train mode to update running stats
+
+        for loader in data_loaders:
+            batch_count = 0
+            for inputs, _ in loader:
+                inputs = inputs.to(device)
+                self(inputs)  # forward pass updates BN running stats
+                batch_count += 1
+                if batch_count >= max_batches:
+                    break
+
+        self.eval()  # return to eval mode
+
     def clone(self) -> "BreakHisCNN":
         """Return a detached deep copy for local client training."""
         return copy.deepcopy(self)
@@ -151,7 +202,12 @@ class ClientUpdate:
 
 
 def fedavg(client_updates: Sequence[ClientUpdate]) -> dict[str, torch.Tensor]:
-    """Aggregate client model states using sample-weighted FedAvg."""
+    """Aggregate client model states using sample-weighted FedAvg.
+
+    Averages all floating-point parameters and buffers (weights, biases,
+    running_mean, running_var).  Integer buffers like ``num_batches_tracked``
+    are reset to zero so that subsequent BN calibration starts fresh.
+    """
     if not client_updates:
         raise ValueError("fedavg requires at least one client update.")
 
@@ -169,7 +225,8 @@ def fedavg(client_updates: Sequence[ClientUpdate]) -> dict[str, torch.Tensor]:
                 for update in client_updates
             ).to(first_value.dtype)
         else:
-            # Non-floating buffers (e.g. batch-norm running counts) cannot be averaged.
-            averaged_state[key] = first_value
+            # Integer buffers (e.g. num_batches_tracked): reset to zero.
+            # They will be recomputed during BN calibration.
+            averaged_state[key] = torch.zeros_like(first_value)
 
     return averaged_state

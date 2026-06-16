@@ -4,9 +4,11 @@ Trains seven federated-learning configurations on the BreakHis breast cancer
 dataset (non-IID across 5 clients) and saves per-round JSON results.
 """
 
+import json
+from pathlib import Path
 import torch
 
-from config import LOCAL_EPOCHS, NUM_ROUNDS, CLASS_NAMES
+from config import LOCAL_EPOCHS, NUM_ROUNDS, CLASS_NAMES, PROJECT_ROOT
 from data_loader import create_non_iid_breakhis, print_client_distribution
 from training_loop import SOLUTIONS, build_model, train_federated
 
@@ -29,6 +31,25 @@ def main():
     print("=" * 70)
 
     for solution_name in SOLUTIONS:
+        # Check if the final results file already exists and has the requested number of rounds
+        results_dir = Path(PROJECT_ROOT) / "results"
+        results_path = results_dir / f"{solution_name}_results.json"
+        if results_path.exists():
+            try:
+                with results_path.open("r", encoding="utf-8") as f:
+                    old_results = json.load(f)
+                if len(old_results.get("rounds", [])) >= NUM_ROUNDS:
+                    print(f"\n{'='*70}")
+                    print(f"  Solution: {solution_name} (Already fully trained, skipping...)")
+                    print(f"{'='*70}")
+                    final_round = old_results["rounds"][-1]
+                    print(f"    Accuracy:  {final_round['accuracy']:.2f}%")
+                    print(f"    F1 Score:  {final_round['macro_f1']:.4f}")
+                    print(f"    Saved to:  {results_path}")
+                    continue
+            except Exception:
+                pass
+
         print(f"\n{'='*70}")
         print(f"  Solution: {solution_name}")
         print(f"{'='*70}")

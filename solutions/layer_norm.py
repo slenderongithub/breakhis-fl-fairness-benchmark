@@ -10,7 +10,7 @@ SOLUTION_NAME = "layer_norm"
 NORM_TYPE = "layer"
 LOSS_TYPE = "cross_entropy"
 OPTIMIZER = "adam"
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.0001  # mild L2 to reduce client drift in non-IID FL
 DESCRIPTION = (
     "CNN with LayerNorm. Normalizes across C×H×W per sample — "
     "batch-independent but higher parameter count."

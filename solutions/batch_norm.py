@@ -9,7 +9,7 @@ SOLUTION_NAME = "batch_norm"
 NORM_TYPE = "batch"
 LOSS_TYPE = "cross_entropy"
 OPTIMIZER = "adam"
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.0001  # mild L2 to reduce client drift in non-IID FL
 DESCRIPTION = (
     "CNN with BatchNorm2d. Normalizes per mini-batch — can degrade under "
     "non-IID federated splits because local batch statistics diverge."

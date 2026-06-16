@@ -10,7 +10,7 @@ SOLUTION_NAME = "group_norm"
 NORM_TYPE = "group"
 LOSS_TYPE = "cross_entropy"
 OPTIMIZER = "adam"
-WEIGHT_DECAY = 0.0
+WEIGHT_DECAY = 0.0001  # mild L2 to reduce client drift in non-IID FL
 DESCRIPTION = (
     "CNN with GroupNorm (8 groups). Batch-independent normalization — "
     "expected to perform well under non-IID federated splits."
