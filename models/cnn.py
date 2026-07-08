@@ -31,8 +31,7 @@ def _make_norm_layer(norm_type: str, num_channels: int, spatial_size: int | None
     num_channels : int
         Number of feature-map channels.
     spatial_size : int or None
-        Spatial dimension (H=W) of the feature map.  Required for ``"layer"``
-        normalization which needs the full normalized shape.
+        Spatial dimension (H=W) of the feature map.
     """
     if norm_type == "none":
         return nn.Identity()
@@ -45,9 +44,12 @@ def _make_norm_layer(norm_type: str, num_channels: int, spatial_size: int | None
             num_groups -= 1
         return nn.GroupNorm(num_groups, num_channels)
     if norm_type == "layer":
-        if spatial_size is None:
-            raise ValueError("spatial_size is required for LayerNorm")
-        return nn.LayerNorm([num_channels, spatial_size, spatial_size])
+        # GroupNorm with 1 group = LayerNorm normalization statistics
+        # computed over all (C, H, W) values per sample.
+        # Per-channel affine parameters preserve translational equivariance.
+        # This is the standard LayerNorm equivalent for CNN feature maps
+        # used in FL literature.
+        return nn.GroupNorm(1, num_channels)
     if norm_type == "instance":
         return nn.InstanceNorm2d(num_channels, affine=True)
 
@@ -66,17 +68,20 @@ class ConvBlock(nn.Module):
         pool: bool = True,
     ):
         super().__init__()
+        # Keep conv bias enabled for all normalization strategies except BatchNorm
+        use_bias = norm_type in ("none", "group", "layer", "instance")
         layers = [
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=(norm_type == "none")),
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=use_bias),
             _make_norm_layer(norm_type, out_channels, spatial_size),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=(norm_type == "none")),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=use_bias),
             _make_norm_layer(norm_type, out_channels, spatial_size),
             nn.ReLU(inplace=True),
         ]
         if pool:
             layers.append(nn.MaxPool2d(2))
         self.block = nn.Sequential(*layers)
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.block(x)
@@ -106,9 +111,11 @@ class BreakHisCNN(nn.Module):
         self.norm_type = norm_type
         self.num_classes = num_classes
 
+        first_block_norm = norm_type
+
         # Spatial sizes after each pool: 128→64→32→16→8
         self.features = nn.Sequential(
-            ConvBlock(3, 32, norm_type, spatial_size=128),    # → 64
+            ConvBlock(3, 32, first_block_norm, spatial_size=128),    # → 64
             nn.Dropout2d(dropout / 3),
             ConvBlock(32, 64, norm_type, spatial_size=64),    # → 32
             nn.Dropout2d(dropout / 2),

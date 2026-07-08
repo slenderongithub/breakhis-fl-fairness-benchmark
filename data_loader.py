@@ -70,6 +70,24 @@ def _augmented_train_transform():
     ])
 
 
+_GLOBAL_IMAGE_CACHE = {}
+
+
+class CachedImageFolder(datasets.ImageFolder):
+    """A subclass of ImageFolder that caches resized PIL images in memory to speed up I/O."""
+
+    def __getitem__(self, index: int):
+        path, target = self.samples[index]
+        if path in _GLOBAL_IMAGE_CACHE:
+            return _GLOBAL_IMAGE_CACHE[path], target
+
+        sample, target = super().__getitem__(index)
+        # Resize to target image size immediately to save memory in cache
+        sample = sample.resize((IMG_SIZE, IMG_SIZE))
+        _GLOBAL_IMAGE_CACHE[path] = sample
+        return sample, target
+
+
 class TransformSubset(Dataset):
     """Wraps a Subset to apply a custom transform instead of the parent's."""
 
@@ -150,7 +168,7 @@ def create_non_iid_breakhis(
         A single global test DataLoader.
     """
     # Load without transforms so we can apply them per-subset later
-    full_dataset = datasets.ImageFolder(root=str(BREAKHIS_PATH), transform=None)
+    full_dataset = CachedImageFolder(root=str(BREAKHIS_PATH), transform=None)
 
     # Deterministic train/test split
     generator = torch.Generator().manual_seed(RANDOM_SEED)

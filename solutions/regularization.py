@@ -12,8 +12,8 @@ SOLUTION_NAME = "regularization"
 NORM_TYPE = "batch"  # uses BatchNorm model
 LOSS_TYPE = "cross_entropy"
 OPTIMIZER = "adam"
-WEIGHT_DECAY = 0.001  # L2 regularization
+WEIGHT_DECAY = 0.0001  # L2 regularization (reduced from 0.001 to prevent majority-class collapse)
 DESCRIPTION = (
-    "CNN with BatchNorm + L2 weight decay (0.001) + stronger augmentation. "
+    "CNN with BatchNorm + L2 weight decay (0.0001) + stronger augmentation. "
     "Tests if regularization improves generalization under non-IID splits."
 )
