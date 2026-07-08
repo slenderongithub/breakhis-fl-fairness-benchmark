@@ -56,16 +56,56 @@ python main.py
 This will train each configuration for 20 communication rounds (configurable in `config.py`) and save the logs in the `results/` directory.
 
 ### 4. Analyze and Visualize
+
 Generate the analysis plots and metrics table:
+
 ```bash
 python analysis.py
 ```
-This generates the following visualizations inside `results/`:
-* `accuracy_fairness_tradeoff.png`
-* `convergence_curves.png`
-* `f1_precision_recall.png`
-* `training_time_comparison.png`
-* `loss_curves.png`
+
+This generates the following visualizations inside the `results/` directory.
+
+---
+
+## 📈 Analysis Results
+
+### Accuracy vs Fairness Trade-off
+
+Shows the relationship between overall test accuracy and class-level fairness for every normalization strategy and optimization technique.
+
+![Accuracy-Fairness Tradeoff](results/accuracy_fairness_tradeoff.png)
+
+---
+
+### Convergence Curves
+
+Comparison of test accuracy across the 20 federated communication rounds for each evaluated configuration.
+
+![Convergence Curves](results/convergence_curves.png)
+
+---
+
+### Precision, Recall & F1-score Comparison
+
+Macro-averaged Precision, Recall, and F1-score comparison across all benchmarked methods.
+
+![Precision Recall F1](results/f1_precision_recall.png)
+
+---
+
+### Training Loss Convergence
+
+Average training loss throughout federated training for each solution.
+
+![Training Loss](results/loss_curves.png)
+
+---
+
+### Training Time Comparison
+
+Comparison of the average training time required per communication round for every evaluated approach.
+
+![Training Time Comparison](results/training_time_comparison.png)
 
 ---
 
